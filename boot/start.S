@@ -70,7 +70,7 @@ _start:
 4:
 	/*only hart 0*/
 	call BootMain
-	j .enter_uboot
+	j enter_uboot
 	
 .LbootOtherHart:
 #if 0 //no need to clear
@@ -105,10 +105,10 @@ _start:
 	fence
 	csrw mip, 0
 	li a2, NUM_CORES  
-	bltu a0, a2, .enter_uboot
+	bltu a0, a2, enter_uboot
 	j .LwaitOtherHart
 
-.enter_uboot:
+enter_uboot:
 	# Synchronize the instruction and data caches.
 	fence.i
 	li t0, DEFAULT_UBOOT_ADDR

@@ -49,7 +49,10 @@ uintptr_t handle_trap(uintptr_t mcause, uintptr_t epc)
 		rlSendString("unhandle trap.\n");
 	}
 #endif
-	printk("trap mcause:0x%x epc:0x%x\n",mcause,epc);
+  // printk("########## trap info ##########\r\n");
+	printk("mcause: 0x%lx\r\n", mcause);
+  printk("mepc: 0x%lx\r\n", epc);
+  printk("mtval: 0x%lx\r\n", read_csr(mtval));
 	return epc;
 }
 

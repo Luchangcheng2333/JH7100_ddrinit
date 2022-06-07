@@ -214,6 +214,70 @@ int updata_flash(struct spi_flash* spi_flash,u32 flash_addr,u32 flash_size_limit
 	return 0;
 }
 
+int update_mem(struct spi_flash* spi_flash,u32 flash_addr,u32 flash_size_limit, u32 load_addr,unsigned char mode)
+{
+    int ret = 0;
+    int size = 0;
+    u32 offset = 0;
+    int erase_block = 0;
+    unsigned int page_count = 0;
+    unsigned int index = 0;
+	unsigned int blockSize,pageSize;
+	u8 *data;
+
+    printk("send OS binary file by xmodem, load_addr: 0x%#x\r\n", load_addr);
+	
+	blockSize = spi_flash->block_size;
+	pageSize = spi_flash->page_size;
+	
+	size = xmodemReceive((unsigned char *)load_addr,0);
+    ret = size;
+	if(ret <= 0)
+		return -1;
+
+	if ((u32)ret > flash_size_limit) {
+		printk("error: size %d exceeds the limit %d\r\n", ret, flash_size_limit);
+		return -1;
+	}
+	erase_block = (ret + blockSize - 1) / blockSize;
+	page_count = (ret + pageSize - 1) / pageSize;
+
+	/*erase flash*/
+	offset = flash_addr;
+	for(index=0; index<erase_block; index++)
+	{
+		ret = 0;
+		if(ret < 0)
+		{
+			printk("erases block %d fail\r\n",offset);
+	        return -1;
+		}
+		offset +=blockSize;
+	}
+
+	/*write data*/
+	offset = flash_addr;
+	data = (u8 *)load_addr;
+	for(index=0; index<page_count; index++)
+	{
+		ret = 0;
+		
+		printk(".");
+		if(index%64 == 0)
+			printk("\r\n");
+		
+		if(ret < 0)
+		{
+			printk("write page %d fail\r\n",offset);
+	        return -1;
+		}
+		offset +=pageSize;
+		data += pageSize;
+	}
+
+	return size;
+}
+
 static int updata_flash_code(struct spi_flash* spi_flash,unsigned int updata_num,unsigned char mode)
 {
     int ret = 0;
@@ -226,6 +290,9 @@ static int updata_flash_code(struct spi_flash* spi_flash,unsigned int updata_num
             break;
         case 2:
             ret = updata_flash(spi_flash,FLASH_UBOOT_START_ADDR,FLASH_UBOOT_SIZE_LIMIT,DEFAULT_UBOOT_LOAD_ADDR,mode);
+            break;
+        case 3:
+            ret = update_mem(spi_flash,FLASH_UBOOT_START_ADDR,FLASH_UBOOT_SIZE_LIMIT,DEFAULT_UBOOT_LOAD_ADDR,mode);
             break;
         default:
             break;
@@ -248,6 +315,26 @@ static int prog_ddrinit(struct spi_flash *flash, int mode)
 static int prog_uboot(struct spi_flash *flash, int mode)
 {
     updata_flash_code(flash, 2, mode);
+    return 0;
+}
+
+static int prog_memory(struct spi_flash *flash, int mode)
+{
+    printk("program memory\r\n");
+    mode = updata_flash_code(flash, 3, mode);
+    if (mode >= 0)
+    {
+        writel(0x1, 0x2000004);
+        printk("\r\nJump to my OS\r\n");
+        asm volatile (
+            "fence.i;"
+	        "li t0, 0x80000000;"
+	        "csrr a0, mhartid;"
+	        "la a1, 0;"
+	        "jr t0"
+        );
+    }
+    
     return 0;
 }
 
@@ -303,11 +390,13 @@ static void prog_flash(void)
 {
     prog_menu_t user_menu[] = {
         { "update uboot",           prog_uboot   },
+        { "update memory for my operating system", prog_memory }
     };
     prog_menu_t root_menu[] = {
         { "update second boot",     prog_2ndboot },
         { "update ddr init boot",   prog_ddrinit },
         { "update uboot",           prog_uboot   },
+        { "update memory for my operating system", prog_memory }
     };
     struct spi_flash *flash = NULL;
     unsigned char mode = 1;// or 4
